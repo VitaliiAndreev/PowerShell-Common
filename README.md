@@ -5,6 +5,7 @@ Shared PowerShell module providing common utilities for the
 
 ## Index
 
+- [Requirements](#requirements)
 - [Overview](#overview)
 - [Installation](#installation)
 - [Publishing](#publishing)
@@ -17,6 +18,12 @@ Shared PowerShell module providing common utilities for the
   - [Invoke-SshClientCommand](#invoke-sshclientcommand)
   - [Set-DeploymentStatus](#set-deploymentstatus)
 - [Repo structure](#repo-structure)
+
+---
+
+## Requirements
+
+PowerShell 7+ (`pwsh`). Windows PowerShell 5.1 is not supported.
 
 ---
 
