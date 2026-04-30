@@ -23,6 +23,13 @@ Describe 'Set-DeploymentStatus' {
                 $Endpoint -eq 'repos/myorg/myrepo/deployments/42/statuses'
             }
         }
+
+        It 'accepts a deployment ID larger than Int32.MaxValue' {
+            { Set-DeploymentStatus `
+                -Token 'tok' -Owner 'o' -Repo 'r' `
+                -DeploymentId 4534787775 -State 'success' } |
+                Should -Not -Throw
+        }
     }
 
     # ------------------------------------------------------------------

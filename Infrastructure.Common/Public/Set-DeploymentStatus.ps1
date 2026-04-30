@@ -26,8 +26,9 @@ function Set-DeploymentStatus {
         [string] $Repo,
 
         # Numeric deployment ID, as returned by Get-PendingDeployment.
+        # GitHub deployment IDs exceed Int32.MaxValue - must be [long].
         [Parameter(Mandatory)]
-        [int] $DeploymentId,
+        [long] $DeploymentId,
 
         # Deployment state string. GitHub accepts: error, failure,
         # inactive, in_progress, queued, pending, success.
