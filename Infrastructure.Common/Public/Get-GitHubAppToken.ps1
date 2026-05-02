@@ -41,7 +41,21 @@ function Get-GitHubAppToken {
         # Path to the RSA private key (.pem) downloaded from the GitHub App
         # settings page. The file must be readable by the current user.
         [Parameter(Mandatory)]
-        [string] $PrivateKeyPath
+        [string] $PrivateKeyPath,
+
+        # Restrict the token to these repositories only. When omitted, the
+        # token covers all repos in the installation. Use to apply least-
+        # privilege: a token scoped to one repo cannot touch others even if
+        # the installation has broader access.
+        [Parameter()]
+        [string[]] $Repositories = @(),
+
+        # Restrict the token to a subset of the installation's declared
+        # permissions. Keys are GitHub permission names (e.g. 'administration',
+        # 'contents'); values are 'read' or 'write'. When omitted, the token
+        # carries all permissions granted to the installation.
+        [Parameter()]
+        [hashtable] $Permissions = @{}
     )
 
     # GitHub allows a JWT lifetime of up to 10 minutes (600 seconds).
@@ -86,13 +100,21 @@ function Get-GitHubAppToken {
 
     $jwt = "$signingInput.$(& $toB64Url $sigBytes)"
 
-    # Exchange the signed JWT for an installation access token.
-    # GitHub validates the JWT, checks the installation, and returns
-    # { token, expires_at } scoped to the installation's permissions.
-    $response = Invoke-GitHubApi `
-        -Token    $jwt `
-        -Endpoint "app/installations/$InstallationId/access_tokens" `
-        -Method   'Post'
+    # Build the request body only when scope restrictions are provided.
+    # Omitting the body entirely (rather than sending an empty object) matches
+    # the GitHub API's documented default behaviour for unscoped tokens.
+    $apiParams = @{
+        Token    = $jwt
+        Endpoint = "app/installations/$InstallationId/access_tokens"
+        Method   = 'Post'
+    }
+
+    $body = @{}
+    if ($Repositories.Count -gt 0) { $body['repositories'] = $Repositories }
+    if ($Permissions.Count  -gt 0) { $body['permissions']  = $Permissions  }
+    if ($body.Count         -gt 0) { $apiParams['Body']    = $body          }
+
+    $response = Invoke-GitHubApi @apiParams
 
     [PSCustomObject]@{
         Token     = $response.token

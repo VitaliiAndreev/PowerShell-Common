@@ -130,6 +130,56 @@ Describe 'Get-GitHubAppToken' -Skip:($PSVersionTable.PSVersion.Major -lt 7) {
     }
 
     # ------------------------------------------------------------------
+    Context 'scoped token - Repositories and Permissions' {
+    # ------------------------------------------------------------------
+
+        It 'passes Repositories in the request body when specified' {
+            Mock Invoke-GitHubApi { [PSCustomObject]@{ token = 't'; expires_at = 'e' } }
+
+            Get-GitHubAppToken -AppId 1 -InstallationId 2 -PrivateKeyPath $Script:KeyPath `
+                -Repositories @('my-repo')
+
+            Should -Invoke Invoke-GitHubApi -Times 1 -ParameterFilter {
+                $Body['repositories'] -contains 'my-repo'
+            }
+        }
+
+        It 'passes Permissions in the request body when specified' {
+            Mock Invoke-GitHubApi { [PSCustomObject]@{ token = 't'; expires_at = 'e' } }
+
+            Get-GitHubAppToken -AppId 1 -InstallationId 2 -PrivateKeyPath $Script:KeyPath `
+                -Permissions @{ administration = 'write' }
+
+            Should -Invoke Invoke-GitHubApi -Times 1 -ParameterFilter {
+                $Body['permissions']['administration'] -eq 'write'
+            }
+        }
+
+        It 'passes both Repositories and Permissions together when both are specified' {
+            Mock Invoke-GitHubApi { [PSCustomObject]@{ token = 't'; expires_at = 'e' } }
+
+            Get-GitHubAppToken -AppId 1 -InstallationId 2 -PrivateKeyPath $Script:KeyPath `
+                -Repositories @('repo-a') `
+                -Permissions  @{ administration = 'write' }
+
+            Should -Invoke Invoke-GitHubApi -Times 1 -ParameterFilter {
+                $Body['repositories'] -contains 'repo-a' -and
+                $Body['permissions']['administration'] -eq 'write'
+            }
+        }
+
+        It 'omits Body when neither Repositories nor Permissions is specified' {
+            Mock Invoke-GitHubApi { [PSCustomObject]@{ token = 't'; expires_at = 'e' } }
+
+            Get-GitHubAppToken -AppId 1 -InstallationId 2 -PrivateKeyPath $Script:KeyPath
+
+            Should -Invoke Invoke-GitHubApi -Times 1 -ParameterFilter {
+                $null -eq $Body
+            }
+        }
+    }
+
+    # ------------------------------------------------------------------
     Context 'return value' {
     # ------------------------------------------------------------------
 
