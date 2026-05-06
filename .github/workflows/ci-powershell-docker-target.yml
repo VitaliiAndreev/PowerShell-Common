@@ -23,7 +23,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
       # Local action paths only resolve within the same repo/branch, so the
       # scan and run steps are duplicated with conditional guards. Exactly one
@@ -42,14 +43,18 @@ jobs:
         with:
           test-dir: Tests/Integration.DockerTarget
 
-      - if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
+      - name: Build SSH test image (local)
+        if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
         uses: ./.github/actions/build-ssh-test-image
 
-      - if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
+      - name: Run SSH integration tests (local)
+        if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
         uses: ./.github/actions/run-ssh-integration-tests
 
-      - if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
+      - name: Build SSH test image (consumer)
+        if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/build-ssh-test-image@master
 
-      - if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
+      - name: Run SSH integration tests (consumer)
+        if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/run-ssh-integration-tests@master

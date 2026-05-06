@@ -28,7 +28,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
       # Local action paths only resolve within the same repo/branch, so the
       # scan and run steps are duplicated with conditional guards. Exactly one
@@ -49,14 +50,16 @@ jobs:
           test-dir: Tests/Integration.DockerHost
           check-module-dir: 'true'
 
-      - if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
+      - name: Run integration tests (local)
+        if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
         uses: ./.github/actions/run-integration-tests
         with:
           docker-image: ${{ inputs.docker-image || 'mcr.microsoft.com/powershell:latest' }}
           test-file-paths: ${{ steps.scan-local.outputs.test-file-paths }}
           module-dir: ${{ steps.scan-local.outputs.module-dir }}
 
-      - if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
+      - name: Run integration tests (consumer)
+        if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/run-integration-tests@master
         with:
           docker-image: ${{ inputs.docker-image || 'mcr.microsoft.com/powershell:latest' }}
