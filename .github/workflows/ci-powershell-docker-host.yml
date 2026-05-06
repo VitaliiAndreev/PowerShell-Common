@@ -23,56 +23,45 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Runs when this workflow is triggered directly on Infrastructure-Common
-  # (pull_request / workflow_dispatch). Uses local action paths so they are
-  # resolvable even before this branch is merged to master.
-  integration-local:
+  integration:
     name: Integration (PowerShell 7) - Docker host tests
     runs-on: ubuntu-latest
-    if: ${{ github.repository == 'VitaliiAndreev/Infrastructure-Common' }}
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Scan for integration tests
-        id: scan
+      # Local action paths only resolve within the same repo/branch, so the
+      # scan and run steps are duplicated with conditional guards. Exactly one
+      # of each pair runs; the || fallbacks below merge the outputs safely.
+      - name: Scan for integration tests (local)
+        id: scan-local
+        if: ${{ github.repository == 'VitaliiAndreev/Infrastructure-Common' }}
         uses: ./.github/actions/scan-integration-tests
         with:
           test-dir: Tests/Integration.DockerHost
           check-module-dir: 'true'
 
-      - if: ${{ steps.scan.outputs.has-tests == 'true' }}
-        uses: ./.github/actions/run-integration-tests
-        with:
-          # inputs.docker-image is only populated on workflow_call triggers.
-          # On pull_request / workflow_dispatch it is absent and evaluates to
-          # an empty string, which would override the action's own default and
-          # produce an invalid docker reference. The || fallback restores the
-          # default for non-workflow_call triggers.
-          docker-image: ${{ inputs.docker-image || 'mcr.microsoft.com/powershell:latest' }}
-          test-file-paths: ${{ steps.scan.outputs.test-file-paths }}
-          module-dir: ${{ steps.scan.outputs.module-dir }}
-
-  # Runs when a consumer repo calls this workflow via workflow_call. Uses
-  # pinned external action paths (requires the actions to be on master).
-  integration-consumer:
-    name: Integration (PowerShell 7) - Docker host tests
-    runs-on: ubuntu-latest
-    if: ${{ github.repository != 'VitaliiAndreev/Infrastructure-Common' }}
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Scan for integration tests
-        id: scan
+      - name: Scan for integration tests (consumer)
+        id: scan-consumer
+        if: ${{ github.repository != 'VitaliiAndreev/Infrastructure-Common' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/scan-integration-tests@master
         with:
           test-dir: Tests/Integration.DockerHost
           check-module-dir: 'true'
 
-      - if: ${{ steps.scan.outputs.has-tests == 'true' }}
+      - name: Run integration tests (local)
+        if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
+        uses: ./.github/actions/run-integration-tests
+        with:
+          docker-image: ${{ inputs.docker-image || 'mcr.microsoft.com/powershell:latest' }}
+          test-file-paths: ${{ steps.scan-local.outputs.test-file-paths }}
+          module-dir: ${{ steps.scan-local.outputs.module-dir }}
+
+      - name: Run integration tests (consumer)
+        if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/run-integration-tests@master
         with:
           docker-image: ${{ inputs.docker-image || 'mcr.microsoft.com/powershell:latest' }}
-          test-file-paths: ${{ steps.scan.outputs.test-file-paths }}
-          module-dir: ${{ steps.scan.outputs.module-dir }}
+          test-file-paths: ${{ steps.scan-consumer.outputs.test-file-paths }}
+          module-dir: ${{ steps.scan-consumer.outputs.module-dir }}

@@ -18,47 +18,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Runs when this workflow is triggered directly on Infrastructure-Common
-  # (pull_request / workflow_dispatch). Uses the local action path so the
-  # action can be resolved even before this branch is merged to master.
-  integration-local:
+  integration:
     name: Integration (PowerShell 7) - Docker host SSH target
     runs-on: ubuntu-latest
-    if: ${{ github.repository == 'VitaliiAndreev/Infrastructure-Common' }}
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Scan for integration tests
-        id: scan
+      # Local action paths only resolve within the same repo/branch, so the
+      # scan and run steps are duplicated with conditional guards. Exactly one
+      # of each pair runs; the || fallback below merges has-tests safely.
+      - name: Scan for integration tests (local)
+        id: scan-local
+        if: ${{ github.repository == 'VitaliiAndreev/Infrastructure-Common' }}
         uses: ./.github/actions/scan-integration-tests
         with:
           test-dir: Tests/Integration.DockerTarget
 
-      - if: ${{ steps.scan.outputs.has-tests == 'true' }}
-        uses: ./.github/actions/build-ssh-test-image
-
-      - if: ${{ steps.scan.outputs.has-tests == 'true' }}
-        uses: ./.github/actions/run-ssh-integration-tests
-
-  # Runs when a consumer repo calls this workflow via workflow_call. Uses
-  # the pinned external action path (requires the action to be on master).
-  integration-consumer:
-    name: Integration (PowerShell 7) - Docker host SSH target
-    runs-on: ubuntu-latest
-    if: ${{ github.repository != 'VitaliiAndreev/Infrastructure-Common' }}
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Scan for integration tests
-        id: scan
+      - name: Scan for integration tests (consumer)
+        id: scan-consumer
+        if: ${{ github.repository != 'VitaliiAndreev/Infrastructure-Common' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/scan-integration-tests@master
         with:
           test-dir: Tests/Integration.DockerTarget
 
-      - if: ${{ steps.scan.outputs.has-tests == 'true' }}
+      - name: Build SSH test image (local)
+        if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
+        uses: ./.github/actions/build-ssh-test-image
+
+      - name: Run SSH integration tests (local)
+        if: ${{ steps.scan-local.outputs.has-tests == 'true' }}
+        uses: ./.github/actions/run-ssh-integration-tests
+
+      - name: Build SSH test image (consumer)
+        if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/build-ssh-test-image@master
 
-      - if: ${{ steps.scan.outputs.has-tests == 'true' }}
+      - name: Run SSH integration tests (consumer)
+        if: ${{ steps.scan-consumer.outputs.has-tests == 'true' }}
         uses: VitaliiAndreev/Infrastructure-Common/.github/actions/run-ssh-integration-tests@master
