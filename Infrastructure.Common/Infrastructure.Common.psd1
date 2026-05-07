@@ -13,6 +13,7 @@
     # Both lists must stay in sync. The shared Module.Tests.ps1 in the
     # run-unit-tests action enforces this.
     FunctionsToExport = @(
+        'Add-VmFileServerFile',
         'Assert-RequiredProperties',
         'ConvertTo-Array',
         'Get-GitHubAppToken',

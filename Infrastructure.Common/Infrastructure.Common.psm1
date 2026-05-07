@@ -28,6 +28,8 @@
       handle, guaranteeing cleanup in a finally block. Start-VmFileServer,
       Stop-VmFileServer, and Get-VmSwitchHostIp are private helpers called
       internally by this function.
+    - Add-VmFileServerFile: copies a host-side file into the server's staging
+      directory and returns its download URL. Idempotent by name and size.
 
     Each function lives in its own file under Public\ or Private\ and is
     dot-sourced below so diffs stay focused on a single function per commit.
@@ -39,6 +41,7 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Private\Get-VmSwitchHostIp.ps1"
 . "$PSScriptRoot\Private\Start-VmFileServer.ps1"
 . "$PSScriptRoot\Private\Stop-VmFileServer.ps1"
+. "$PSScriptRoot\Public\Add-VmFileServerFile.ps1"
 . "$PSScriptRoot\Public\Assert-RequiredProperties.ps1"
 . "$PSScriptRoot\Public\ConvertTo-Array.ps1"
 . "$PSScriptRoot\Public\Get-GitHubAppToken.ps1"
@@ -56,6 +59,7 @@ $ErrorActionPreference = 'Stop'
 # discovery without loading the module. The shared Module.Tests.ps1 in the
 # run-unit-tests action enforces that every Public\*.ps1 file appears in both.
 Export-ModuleMember -Function `
+    Add-VmFileServerFile, `
     Assert-RequiredProperties, `
     ConvertTo-Array, `
     Get-GitHubAppToken, `
