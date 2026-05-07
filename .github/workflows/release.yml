@@ -28,13 +28,18 @@ jobs:
     if: needs.check-version.outputs.version_is_new == 'true'
     uses: ./.github/workflows/ci-powershell.yml
 
-  test-integration:
+  test-integration-host:
     needs: check-version
     if: needs.check-version.outputs.version_is_new == 'true'
-    uses: ./.github/workflows/ci-powershell-docker.yml
+    uses: ./.github/workflows/ci-powershell-docker-host.yml
+
+  test-integration-target:
+    needs: check-version
+    if: needs.check-version.outputs.version_is_new == 'true'
+    uses: ./.github/workflows/ci-powershell-docker-target.yml
 
   tag:
-    needs: [ check-version, test-unit, test-integration ]
+    needs: [ check-version, test-unit, test-integration-host, test-integration-target ]
     if: needs.check-version.outputs.version_is_new == 'true'
     permissions:
       contents: write

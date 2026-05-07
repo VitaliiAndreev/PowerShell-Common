@@ -3,7 +3,7 @@ name: CI
 # Reusable unit-test workflow for PowerShell repos. Checks out
 # Infrastructure-Common and calls Run-Tests.ps1 directly, excluding
 # Tests\Integration\ automatically. Integration tests run separately via
-# ci-powershell-docker.yml.
+# ci-powershell-docker-host.yml and ci-powershell-docker-target.yml.
 #
 # Consumer repos call this workflow from their own ci.yml instead of
 # maintaining their own run-tests logic for CI.
