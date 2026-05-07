@@ -10,12 +10,14 @@ Shared PowerShell module providing common utilities for the
 - [Installation](#installation)
 - [Publishing](#publishing)
 - [API reference](#api-reference)
+  - [Add-VmFileServerFile](#add-vmfileserverfile)
   - [Assert-RequiredProperties](#assert-requiredproperties)
   - [Get-GitHubAppToken](#get-githubapptoken)
   - [Get-PendingDeployment](#get-pendingdeployment)
   - [Invoke-GitHubApi](#invoke-githubapi)
   - [Invoke-ModuleInstall](#invoke-moduleinstall)
   - [Invoke-SshClientCommand](#invoke-sshclientcommand)
+  - [Invoke-WithVmFileServer](#invoke-withvmfileserver)
   - [Set-DeploymentStatus](#set-deploymentstatus)
 - [Repo structure](#repo-structure)
 
@@ -57,6 +59,13 @@ need to be duplicated and tested in each one independently:
   `Error`, `ExitStatus`). Uses SSH.NET directly rather than Posh-SSH cmdlets
   to avoid a Posh-SSH 3.x bug that breaks key exchange against
   OpenSSH 9.x (Ubuntu 24.04).
+- **`Invoke-WithVmFileServer`** - starts a persistent HTTP file server bound
+  to the Hyper-V internal switch, runs a caller-supplied script block with
+  the server handle, then stops the server in a `finally` block. Prevents
+  callers from leaking the listener or firewall rule.
+- **`Add-VmFileServerFile`** - copies a host-side file into the server's
+  staging directory and returns its download URL. Idempotent: skips the copy
+  if a file with the same name and byte count is already staged.
 
 ### Bootstrap note
 
@@ -120,6 +129,32 @@ Generate a key at [powershellgallery.com/account/apikeys](https://www.powershell
 ---
 
 ## API reference
+
+### `Add-VmFileServerFile`
+
+Copies a file from the Windows host into the server's staging directory and
+returns the full URL the VM can use to download it via `curl`. Idempotent:
+if a file with the same name and byte count is already staged, the copy is
+skipped (avoids re-copying large files on re-runs).
+
+Must be called while a server started by `Invoke-WithVmFileServer` is live.
+
+| Parameter     | Type          | Required | Description                                    |
+|---------------|---------------|----------|------------------------------------------------|
+| `-Server`     | PSCustomObject| Yes      | Server handle from `Invoke-WithVmFileServer`   |
+| `-LocalPath`  | string        | Yes      | Absolute path to the file on the Windows host  |
+
+Returns a `[string]` download URL, e.g. `http://10.10.0.1:8745/tarball.tar.gz`.
+
+```powershell
+Invoke-WithVmFileServer -VmIpAddress '10.10.0.50' -ScriptBlock {
+    param($server)
+    $url = Add-VmFileServerFile -Server $server -LocalPath 'E:\cache\tarball.tar.gz'
+    # -> 'http://10.10.0.1:8745/tarball.tar.gz'
+}
+```
+
+---
 
 ### `Assert-RequiredProperties`
 
@@ -282,6 +317,42 @@ $r.Output
 
 ---
 
+### `Invoke-WithVmFileServer`
+
+Starts a persistent HTTP file server bound to the Hyper-V internal switch,
+runs a caller-supplied script block with the server handle, then stops the
+server in a `finally` block regardless of whether the script block throws.
+
+The server serves files from a host-side staging directory over plain HTTP,
+reachable from all VMs on the switch via `curl`. One firewall rule is opened
+for the duration of the session and removed on stop.
+
+Use `Add-VmFileServerFile` inside the script block to stage files and obtain
+their download URLs.
+
+| Parameter       | Type        | Required | Description                                                  |
+|-----------------|-------------|----------|--------------------------------------------------------------|
+| `-VmIpAddress`  | string      | Yes*     | VM IP; host adapter IP is derived from it. Mutually exclusive with `-HostIp` |
+| `-HostIp`       | string      | Yes*     | Explicit host IP to bind to. Mutually exclusive with `-VmIpAddress` |
+| `-Port`         | int         | No       | TCP port; defaults to `8745`                                 |
+| `-ScriptBlock`  | scriptblock | Yes      | Block to run while the server is live; receives the server handle as `$args[0]` |
+
+\* Exactly one of `-VmIpAddress` or `-HostIp` is required.
+
+The server handle passed to the script block exposes:
+`HostIp`, `Port`, `BaseUrl`, `StagingDir`, `Listener`, `Runspace`,
+`PowerShell`, `FirewallRuleName`.
+
+```powershell
+Invoke-WithVmFileServer -VmIpAddress '10.10.0.50' -Port 8745 -ScriptBlock {
+    param($server)
+    $url = Add-VmFileServerFile -Server $server -LocalPath 'E:\cache\tarball.tar.gz'
+    # $server.BaseUrl -> 'http://10.10.0.1:8745'
+}
+```
+
+---
+
 ### `Set-DeploymentStatus`
 
 Posts a status update to an existing GitHub deployment. Wraps
@@ -316,23 +387,34 @@ Set-DeploymentStatus -Token $token -Owner 'my-org' -Repo 'Infrastructure-E2E' `
 Infrastructure-Common/
 |- Infrastructure.Common/
 |  |- Public/
+|  |  |- Add-VmFileServerFile.ps1
 |  |  |- Assert-RequiredProperties.ps1
 |  |  |- Get-GitHubAppToken.ps1
 |  |  |- Get-PendingDeployment.ps1
 |  |  |- Invoke-GitHubApi.ps1
 |  |  |- Invoke-ModuleInstall.ps1
-|  |  |- Set-DeploymentStatus.ps1
-|  |  `- Invoke-SshClientCommand.ps1
-|  |- Infrastructure.Common.psm1        # Dot-sources Public\ and exports functions
+|  |  |- Invoke-SshClientCommand.ps1
+|  |  |- Invoke-WithVmFileServer.ps1
+|  |  `- Set-DeploymentStatus.ps1
+|  |- Private/
+|  |  |- Get-VmSwitchHostIp.ps1        # Finds host adapter IP from a VM IP
+|  |  |- Start-VmFileServer.ps1        # Starts HttpListener + background runspace
+|  |  `- Stop-VmFileServer.ps1         # Tears down listener, runspace, firewall rule
+|  |- Infrastructure.Common.psm1        # Dot-sources Public\ and Private\; exports Public functions
 |  `- Infrastructure.Common.psd1        # Module manifest (version, GUID, exports)
 |- Tests/
+|  |- Add-VmFileServerFile.Tests.ps1
 |  |- Assert-RequiredProperties.Tests.ps1
 |  |- Get-GitHubAppToken.Tests.ps1
 |  |- Get-PendingDeployment.Tests.ps1
+|  |- Get-VmSwitchHostIp.Tests.ps1
 |  |- Invoke-GitHubApi.Tests.ps1
 |  |- Invoke-ModuleInstall.Tests.ps1
-|  |- Set-DeploymentStatus.Tests.ps1
 |  |- Invoke-SshClientCommand.Tests.ps1
+|  |- Invoke-WithVmFileServer.Tests.ps1
+|  |- Set-DeploymentStatus.Tests.ps1
+|  |- Start-VmFileServer.Tests.ps1
+|  |- Stop-VmFileServer.Tests.ps1
 |  `- Integration/                      # Integration tests - run in Docker only
 |- .github/
 |  |- actions/

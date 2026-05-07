@@ -1,5 +1,5 @@
 @{
-    ModuleVersion        = '2.1.0'
+    ModuleVersion        = '2.2.0'
     GUID                 = 'b7d3f2a1-4c9e-4f8d-a2b5-3e6d7f8a9b0c'
     Author               = 'Vitaly Andrev'
     Description          = 'Shared PowerShell utilities for infrastructure repos.'
@@ -13,6 +13,7 @@
     # Both lists must stay in sync. The shared Module.Tests.ps1 in the
     # run-unit-tests action enforces this.
     FunctionsToExport = @(
+        'Add-VmFileServerFile',
         'Assert-RequiredProperties',
         'ConvertTo-Array',
         'Get-GitHubAppToken',
@@ -20,6 +21,7 @@
         'Invoke-GitHubApi',
         'Invoke-ModuleInstall',
         'Invoke-SshClientCommand',
+        'Invoke-WithVmFileServer',
         'Set-DeploymentStatus'
     )
     CmdletsToExport   = @()
