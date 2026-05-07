@@ -30,10 +30,6 @@ Infrastructure.GitHub/
     Public/                         # (empty - populated in Step 2)
   Tests/                            # (empty - populated in Step 2)
   .github/
-    actions/
-      run-unit-tests/
-        Module.Tests.ps1            # enforces psd1/psm1/Export-ModuleMember sync
-                                    # (copied verbatim from Common)
     workflows/
       ci.yml                        # calls Common's ci-powershell.yml
       ci-docker-host.yml            # calls Common's ci-powershell-docker-host.yml
@@ -115,7 +111,8 @@ and Infrastructure-E2E:
 The psd1 starts at `0.0.0` with an empty `FunctionsToExport`. No functions are
 published yet - that happens in Step 2.
 
-**Tests**: `Module.Tests.ps1` (copied verbatim from Common):
+**Tests**: Common's `Module.Tests.ps1` runs automatically via `.ci-common` - no
+local copy needed. With `Public/` empty it trivially passes:
 - All `Public\*.ps1` files appear in `FunctionsToExport`.
 - All `Public\*.ps1` files are dot-sourced in the psm1.
 - All `Public\*.ps1` files appear in `Export-ModuleMember`.
