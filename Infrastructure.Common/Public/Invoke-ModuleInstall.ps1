@@ -65,5 +65,21 @@ function Invoke-ModuleInstall {
         Install-Module @installParams
     }
 
-    Import-Module $ModuleName -Force -ErrorAction Stop
+    # The version Import-Module would pick (highest on disk). Re-queried
+    # after the install block so we see the freshly installed version.
+    $targetVersion = (Get-Module -ListAvailable -Name $ModuleName |
+        Sort-Object Version -Descending | Select-Object -First 1).Version
+
+    # Skip the unload+reload cycle when exactly the target version is
+    # already the only one loaded. The unload only exists to break the
+    # two-versions-live trap (older + newer both in the session at once,
+    # making command resolution order-dependent); when that trap is not
+    # in play, reloading is wasted work.
+    $loaded = @(Get-Module -Name $ModuleName)
+    $alreadyCorrect = $loaded.Count -eq 1 -and
+                      $loaded[0].Version -eq $targetVersion
+    if (-not $alreadyCorrect) {
+        if ($loaded) { $loaded | Remove-Module -Force }
+        Import-Module $ModuleName -Force -ErrorAction Stop
+    }
 }
