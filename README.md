@@ -56,9 +56,14 @@ flow through `Invoke-ModuleInstall`.
 # Inline bootstrap - cannot use Invoke-ModuleInstall to install itself.
 $_common = Get-Module -ListAvailable -Name Infrastructure.Common |
     Sort-Object Version -Descending | Select-Object -First 1
-if (-not $_common -or $_common.Version -lt [Version]'4.0.0') {
+if (-not $_common -or $_common.Version -lt [Version]'4.0.1') {
     Install-Module Infrastructure.Common -Scope CurrentUser -Force
 }
+# Unload any previously-loaded version so Import-Module picks the newest
+# cleanly. Without this, an older session-loaded version can stay live
+# alongside the just-installed one (same trap Invoke-ModuleInstall now
+# guards against - inlined here because the bootstrap predates the fix).
+Get-Module -Name Infrastructure.Common | Remove-Module -Force
 Import-Module Infrastructure.Common -Force -ErrorAction Stop
 ```
 
