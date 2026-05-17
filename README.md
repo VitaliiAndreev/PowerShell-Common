@@ -58,13 +58,19 @@ $_common = Get-Module -ListAvailable -Name Infrastructure.Common |
     Sort-Object Version -Descending | Select-Object -First 1
 if (-not $_common -or $_common.Version -lt [Version]'4.0.1') {
     Install-Module Infrastructure.Common -Scope CurrentUser -Force
+    # Re-query so the comparison below uses the freshly installed version.
+    $_common = Get-Module -ListAvailable -Name Infrastructure.Common |
+        Sort-Object Version -Descending | Select-Object -First 1
 }
-# Unload any previously-loaded version so Import-Module picks the newest
-# cleanly. Without this, an older session-loaded version can stay live
-# alongside the just-installed one (same trap Invoke-ModuleInstall now
-# guards against - inlined here because the bootstrap predates the fix).
-Get-Module -Name Infrastructure.Common | Remove-Module -Force
-Import-Module Infrastructure.Common -Force -ErrorAction Stop
+# Reload only when the loaded state differs from the target (multiple
+# versions live, or wrong version live). Mirrors the conditional in
+# Invoke-ModuleInstall - inlined here because the bootstrap installs
+# the very module that defines that function.
+$_loaded = @(Get-Module -Name Infrastructure.Common)
+if ($_loaded.Count -ne 1 -or $_loaded[0].Version -ne $_common.Version) {
+    if ($_loaded) { $_loaded | Remove-Module -Force }
+    Import-Module Infrastructure.Common -Force -ErrorAction Stop
+}
 ```
 
 ---
