@@ -1,9 +1,9 @@
 BeforeAll {
-    # Dot-source the Public file directly so both the exported
-    # Invoke-WithNetworkRetry and the file-private Test-TransientNetworkException
-    # land in test scope - in module form Test-TransientNetworkException is
-    # not exported, but at the file level it is just another function.
-    . "$PSScriptRoot\..\Infrastructure.Common\Public\Invoke-WithNetworkRetry.ps1"
+    # Dot-source the Public file directly so both the exported factory and
+    # the file-private Test-TransientNetworkException land in test scope.
+    # At the file level Test-TransientNetworkException is just another
+    # function; in module form it is not exported.
+    . "$PSScriptRoot\..\..\..\Infrastructure.Common\Public\Retry\TransientErrorStrategies\New-TransientNetworkRetryStrategy.ps1"
 
     # Hand-rolled ErrorRecord factory. Pester's ParameterFilter cannot
     # synthesise ErrorRecords for us, and we need the exception chain to
@@ -36,14 +36,34 @@ namespace Microsoft.PowerShell.Commands {
     }
 }
 
-Describe 'Test-TransientNetworkException' {
+Describe 'New-TransientNetworkRetryStrategy' {
+
+    It 'returns a hashtable with Name and ShouldRetry keys' {
+        $strategy = New-TransientNetworkRetryStrategy
+
+        $strategy           | Should -BeOfType [hashtable]
+        $strategy.Keys      | Should -Contain 'Name'
+        $strategy.Keys      | Should -Contain 'ShouldRetry'
+        $strategy.ShouldRetry | Should -BeOfType [scriptblock]
+    }
+
+    It 'sets Name to TransientNetwork' {
+        (New-TransientNetworkRetryStrategy).Name | Should -Be 'TransientNetwork'
+    }
+}
+
+Describe 'New-TransientNetworkRetryStrategy ShouldRetry predicate' {
+
+    BeforeAll {
+        $script:predicate = (New-TransientNetworkRetryStrategy).ShouldRetry
+    }
 
     It 'returns true for HttpRequestException (DNS / connect failure)' {
         $inner = [System.Net.Sockets.SocketException]::new()
         $ex    = [System.Net.Http.HttpRequestException]::new('dns', $inner)
         $rec   = New-TestErrorRecord -Exception $ex
 
-        Test-TransientNetworkException -ErrorRecord $rec | Should -BeTrue
+        & $script:predicate $rec | Should -BeTrue
     }
 
     It 'returns true for a nested SocketException only reachable via InnerException' {
@@ -54,14 +74,14 @@ Describe 'Test-TransientNetworkException' {
         $outer = [Exception]::new('wrapped', $inner)
         $rec   = New-TestErrorRecord -Exception $outer
 
-        Test-TransientNetworkException -ErrorRecord $rec | Should -BeTrue
+        & $script:predicate $rec | Should -BeTrue
     }
 
     It 'returns true for a 5xx HttpResponseException (server error)' {
         $ex  = New-FakeHttpResponseException -StatusCode 503
         $rec = New-TestErrorRecord -Exception $ex
 
-        Test-TransientNetworkException -ErrorRecord $rec | Should -BeTrue
+        & $script:predicate $rec | Should -BeTrue
     }
 
     It 'returns false for a 4xx HttpResponseException (client error)' {
@@ -69,7 +89,7 @@ Describe 'Test-TransientNetworkException' {
         $ex  = New-FakeHttpResponseException -StatusCode 404
         $rec = New-TestErrorRecord -Exception $ex
 
-        Test-TransientNetworkException -ErrorRecord $rec | Should -BeFalse
+        & $script:predicate $rec | Should -BeFalse
     }
 
     It 'returns false for a non-network exception (string throw / RuntimeException)' {
@@ -78,63 +98,6 @@ Describe 'Test-TransientNetworkException' {
         $ex  = [System.Management.Automation.RuntimeException]::new('boom')
         $rec = New-TestErrorRecord -Exception $ex
 
-        Test-TransientNetworkException -ErrorRecord $rec | Should -BeFalse
-    }
-}
-
-Describe 'Invoke-WithNetworkRetry' {
-
-    It 'returns the script block result on first-attempt success' {
-        $script:_callCount = 0
-        $result = Invoke-WithNetworkRetry -ScriptBlock {
-            $script:_callCount++
-            return 'ok'
-        }
-
-        $result            | Should -Be 'ok'
-        $script:_callCount | Should -Be 1
-    }
-
-    It 'retries a transient failure and returns the eventual success' {
-        $script:_attempts = 0
-        $result = Invoke-WithNetworkRetry `
-            -InitialDelaySeconds 0 `
-            -ScriptBlock {
-                $script:_attempts++
-                if ($script:_attempts -lt 3) {
-                    throw [System.Net.Http.HttpRequestException]::new('dns')
-                }
-                return 'finally'
-            }
-
-        $result            | Should -Be 'finally'
-        $script:_attempts  | Should -Be 3
-    }
-
-    It 'propagates a permanent failure immediately without retrying' {
-        # A plain string throw is non-transient. Test runs in well under
-        # 1 second; if the helper retried, the default 2s delay would
-        # blow that budget.
-        $script:_count = 0
-        { Invoke-WithNetworkRetry -ScriptBlock {
-            $script:_count++
-            throw 'permanent'
-        } } | Should -Throw
-
-        $script:_count | Should -Be 1
-    }
-
-    It 'gives up after MaxAttempts transient failures and rethrows the underlying error' {
-        $script:_tries = 0
-        { Invoke-WithNetworkRetry `
-              -MaxAttempts 3 `
-              -InitialDelaySeconds 0 `
-              -ScriptBlock {
-                  $script:_tries++
-                  throw [System.Net.Http.HttpRequestException]::new('dns')
-              }
-        } | Should -Throw
-
-        $script:_tries | Should -Be 3
+        & $script:predicate $rec | Should -BeFalse
     }
 }

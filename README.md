@@ -14,10 +14,21 @@ sibling modules:
 - [Installation](#installation)
 - [Publishing](#publishing)
 - [API reference](#api-reference)
-  - [Assert-RequiredProperties](#assert-requiredproperties)
-  - [ConvertTo-Array](#convertto-array)
-  - [Invoke-ModuleInstall](#invoke-moduleinstall)
-  - [Invoke-WithNetworkRetry](#invoke-withnetworkretry)
+  - Top-level utilities
+    - [Assert-RequiredProperties](#assert-requiredproperties)
+    - [ConvertTo-Array](#convertto-array)
+    - [Invoke-ModuleInstall](#invoke-moduleinstall)
+  - Retry (`Public/Retry/`)
+    - Loop
+      - [Invoke-WithRetry](#invoke-withretry)
+    - Transient-error strategies (`Public/Retry/TransientErrorStrategies/`)
+      - [New-TransientNetworkRetryStrategy](#new-transientnetworkretrystrategy)
+      - [New-FileLockRetryStrategy](#new-filelockretrystrategy)
+    - Backoff strategies (`Public/Retry/BackoffStrategies/`)
+      - [New-ExponentialBackoffStrategy](#new-exponentialbackoffstrategy)
+      - [New-LinearBackoffStrategy](#new-linearbackoffstrategy)
+      - [New-ConstantBackoffStrategy](#new-constantbackoffstrategy)
+      - [New-CustomBackoffStrategy](#new-custombackoffstrategy)
 - [Reusable CI](#reusable-ci)
 - [Repo structure](#repo-structure)
 
@@ -32,8 +43,11 @@ PowerShell 7+ (`pwsh`). Windows PowerShell 5.1 is not supported.
 ## Overview
 
 Provides cross-cutting utilities used by all infrastructure repos so the logic
-does not need to be duplicated and tested in each one independently:
+does not need to be duplicated and tested in each one independently. Functions
+are grouped on disk by concern; the retry family lives under
+`Public/Retry/`.
 
+**Top-level utilities**
 - **`Assert-RequiredProperties`** - validates that a PSCustomObject has all
   required properties present and non-empty; collects every violation before
   throwing so the consumer sees the full picture in one run.
@@ -41,10 +55,39 @@ does not need to be duplicated and tested in each one independently:
   whether PowerShell unrolled a single-item collection.
 - **`Invoke-ModuleInstall`** - installs a module from PSGallery if absent or
   below the required minimum version, then imports it.
-- **`Invoke-WithNetworkRetry`** - runs a scriptblock and retries on transient
-  network failures (DNS hiccups, connection drops, 5xx) with exponential
-  backoff; non-transient errors (4xx, validation bugs, mock-thrown strings)
-  propagate immediately so failures stay fast.
+
+**Retry (`Public/Retry/`)** - subdivided by strategy category so each
+folder stays small as more factories land:
+
+- *Loop (root of `Public/Retry/`)*
+  - **`Invoke-WithRetry`** - generic retry loop. Consumes hashtable-shaped
+    retry strategies (`ShouldRetry` classifiers) and a backoff strategy
+    (`GetDelay` provider). Multiple retry strategies are OR-composed so a
+    single call can cover several legitimately-transient failure classes
+    (e.g. network + file-lock). Defaults to exponential backoff when none
+    is supplied.
+- *Transient-error strategies (`Public/Retry/TransientErrorStrategies/`)* - factories that
+  return `@{ Name; ShouldRetry }` classifiers consumed by
+  `Invoke-WithRetry`. Compose multiple via `-RetryStrategy`
+  when a single call legitimately touches several transient-failure
+  classes (e.g. network + file-lock).
+  - **`New-TransientNetworkRetryStrategy`** - matches DNS/socket/5xx.
+  - **`New-FileLockRetryStrategy`** - matches `System.IO.IOException`
+    (Hyper-V VMMS handle-release case).
+- *Backoff strategies (`Public/Retry/BackoffStrategies/`)* - factories
+  that return `@{ Name; GetDelay }` providers consumed by
+  `Invoke-WithRetry` via `-BackoffStrategy`. Pick the curve that
+  matches the underlying failure; reach for `New-CustomBackoffStrategy`
+  when the built-ins do not (HTTP 429 `Retry-After`, jittered
+  exponential, deadline-aware backoff, ...).
+  - **`New-ExponentialBackoffStrategy`** - doubles each attempt up to a
+    cap. Sensible default for most call sites.
+  - **`New-LinearBackoffStrategy`** - grows linearly per attempt up to
+    a cap. Predictable spacing when exponential ramps up too fast.
+  - **`New-ConstantBackoffStrategy`** - same delay every attempt. Use
+    when the failure has a known fixed recovery window.
+  - **`New-CustomBackoffStrategy`** - wraps a caller-supplied
+    `GetDelay` script block in the standard hashtable shape.
 
 This repo is also the canonical home of the reusable CI workflows and composite
 actions that every infrastructure module shares - see
@@ -124,6 +167,13 @@ Generate a key at [powershellgallery.com/account/apikeys](https://www.powershell
 
 ## API reference
 
+Functions are grouped on disk by concern. Top-level utilities sit at the
+root of `Public/`; the retry family lives under `Public/Retry/` and is
+further subdivided into `TransientErrorStrategies/` and (in a later
+step) `BackoffStrategies/`.
+
+### Top-level utilities
+
 ### `Assert-RequiredProperties`
 
 Validates that a PSCustomObject has all required properties present and
@@ -181,32 +231,190 @@ Invoke-ModuleInstall -ModuleName 'Posh-SSH'
 
 ---
 
-### `Invoke-WithNetworkRetry`
+### Retry (`Public/Retry/`)
 
-Runs `-ScriptBlock` and retries on transient network failures with
-exponential backoff. Used to harden any caller that touches the network
-(JDK acquisition, GitHub API, runner registration, ...) against brief
-DNS hiccups or short-lived 5xx responses without making hard failures
-feel sluggish.
+#### Loop
 
-Classification is deliberate: failures are retried only when the
-exception chain contains a known-transient type
-(`HttpRequestException`, `SocketException`, `WebException`,
-`TimeoutException`, `TaskCanceledException`) or a 5xx
-`HttpResponseException`. Everything else (4xx, argument bugs, mock-
-thrown strings in tests) propagates immediately.
+### `Invoke-WithRetry`
 
-| Parameter              | Type        | Required | Description                                                                         |
-|------------------------|-------------|----------|-------------------------------------------------------------------------------------|
-| `-ScriptBlock`         | scriptblock | Yes      | The work to attempt. Its return value is the function's return value on success.    |
-| `-OperationName`       | string      | No       | Label surfaced in the per-retry warning. Defaults to `network call`.                |
-| `-MaxAttempts`         | int         | No       | Total attempts including the first. Defaults to `3`. Pass `1` to disable retry.     |
-| `-InitialDelaySeconds` | int         | No       | Seconds before the first retry. Doubles each subsequent attempt. Defaults to `2`.   |
+Generic retry loop. The classification of "what counts as retryable" is
+supplied by hashtable-shaped retry strategies (`ShouldRetry`
+predicates); the inter-attempt pacing comes from a backoff strategy
+(`GetDelay` provider). Multiple retry strategies are OR-composed: if
+any predicate returns `$true`, the loop retries; if none match, the
+failure propagates immediately. The matched strategy's `Name` is
+surfaced in the per-retry warning so operators can tell which policy
+fired when several are composed.
+
+`-BackoffStrategy` defaults to `New-ExponentialBackoffStrategy`
+(2s -> 4s -> 8s, capped at 30s) because that policy fits both currently
+known call sites (HTTP + file-lock); callers wanting a different curve
+pass one explicitly.
+
+| Parameter         | Type          | Required | Description                                                                                  |
+|-------------------|---------------|----------|----------------------------------------------------------------------------------------------|
+| `-ScriptBlock`    | scriptblock   | Yes      | The work to attempt. Its return value is the function's return value on success.             |
+| `-RetryStrategy`  | hashtable[]   | Yes      | One or more `@{ Name; ShouldRetry }` strategies. Mandatory so "never retries" cannot happen silently. |
+| `-BackoffStrategy`| hashtable     | No       | A `@{ Name; GetDelay }` strategy. Defaults to `New-ExponentialBackoffStrategy`.              |
+| `-MaxAttempts`    | int           | No       | Total attempts including the first. Defaults to `3`. Pass `1` to disable retry.              |
+| `-OperationName`  | string        | No       | Label surfaced in the per-retry warning. Defaults to `operation`.                            |
 
 ```powershell
-$json = Invoke-WithNetworkRetry `
-    -OperationName 'Adoptium feature_releases lookup' `
-    -ScriptBlock   { Invoke-RestMethod -Uri $uri -UseBasicParsing }
+# Network call with default exponential backoff.
+$json = Invoke-WithRetry `
+    -OperationName 'Adoptium release lookup' `
+    -RetryStrategy (New-TransientNetworkRetryStrategy) `
+    -ScriptBlock   { Invoke-RestMethod $uri }
+
+# File-lock with a tighter attempt budget.
+Invoke-WithRetry `
+    -OperationName 'delete VHDX' `
+    -RetryStrategy (New-FileLockRetryStrategy) `
+    -MaxAttempts   5 `
+    -ScriptBlock   { Remove-Item $vhdxPath -Force -ErrorAction Stop }
+```
+
+---
+
+#### Transient-error strategies (`Public/Retry/TransientErrorStrategies/`)
+
+### `New-TransientNetworkRetryStrategy`
+
+Builds a retry-strategy hashtable matching transient network failures
+(DNS hiccups, connection drops, 5xx responses, HttpClient timeouts) for
+use with `Invoke-WithRetry`. 4xx HttpResponseExceptions and non-network
+errors are treated as permanent so failures stay fast.
+
+Takes no parameters. Returns:
+
+```powershell
+@{
+    Name        = 'TransientNetwork'
+    ShouldRetry = { param($ErrorRecord) <bool> }
+}
+```
+
+```powershell
+Invoke-WithRetry `
+    -ScriptBlock   { Invoke-RestMethod $uri } `
+    -RetryStrategy (New-TransientNetworkRetryStrategy)
+```
+
+---
+
+### `New-FileLockRetryStrategy`
+
+Builds a retry-strategy hashtable matching `System.IO.IOException`
+anywhere in the exception chain - the canonical Hyper-V VMMS
+handle-release case where `Remove-Item` briefly fails after `Remove-VM`.
+`UnauthorizedAccessException` is intentionally **not** matched: ACL
+problems will not resolve on their own, and retrying just stalls the
+caller before the real error surfaces.
+
+Takes no parameters. Returns:
+
+```powershell
+@{
+    Name        = 'FileLock'
+    ShouldRetry = { param($ErrorRecord) <bool> }
+}
+```
+
+```powershell
+Invoke-WithRetry `
+    -ScriptBlock   { Remove-Item -Path $vhdxPath -Force -ErrorAction Stop } `
+    -RetryStrategy (New-FileLockRetryStrategy) `
+    -MaxAttempts   5
+```
+
+---
+
+#### Backoff strategies (`Public/Retry/BackoffStrategies/`)
+
+All four factories return the same hashtable shape consumed by
+`Invoke-WithRetry` via `-BackoffStrategy`:
+
+```powershell
+@{
+    Name     = '<curve name>'
+    GetDelay = { param($Attempt, $LastError) <seconds> }
+}
+```
+
+`GetDelay` receives the current attempt number (1-based) and the most
+recent `ErrorRecord` so custom providers can adapt the delay to the
+failure (HTTP 429 `Retry-After`, deadline-aware backoff, ...).
+
+### `New-ExponentialBackoffStrategy`
+
+Doubles the delay each attempt, capped at a configurable ceiling.
+Formula: `delay = min(InitialDelaySeconds * 2^(Attempt - 1), MaxIntervalSeconds)`.
+Defaults (2s initial, 30s cap) suit the currently known call sites
+(HTTP + file-lock).
+
+| Parameter              | Type | Required | Description                                  |
+|------------------------|------|----------|----------------------------------------------|
+| `-InitialDelaySeconds` | int  | No       | Seconds before the first retry. Default `2`. |
+| `-MaxIntervalSeconds`  | int  | No       | Upper bound per attempt. Default `30`.       |
+
+```powershell
+$backoff = New-ExponentialBackoffStrategy -InitialDelaySeconds 1 -MaxIntervalSeconds 10
+```
+
+---
+
+### `New-LinearBackoffStrategy`
+
+Grows the delay linearly per attempt up to a cap.
+Formula: `delay = min(StepSeconds * Attempt, MaxIntervalSeconds)`.
+
+| Parameter             | Type | Required | Description                                  |
+|-----------------------|------|----------|----------------------------------------------|
+| `-StepSeconds`        | int  | No       | Increment per attempt. Default `2`.          |
+| `-MaxIntervalSeconds` | int  | No       | Upper bound per attempt. Default `30`.       |
+
+```powershell
+$backoff = New-LinearBackoffStrategy -StepSeconds 2 -MaxIntervalSeconds 10
+# Delays: 2, 4, 6, 8, 10, 10, ...
+```
+
+---
+
+### `New-ConstantBackoffStrategy`
+
+Returns the same delay on every attempt. Use when the failure has a
+known fixed recovery window (service restart cycle, fixed lease
+renewal, ...) and exponential growth would just oversleep.
+
+| Parameter       | Type | Required | Description                          |
+|-----------------|------|----------|--------------------------------------|
+| `-DelaySeconds` | int  | No       | Delay returned every call. Default `2`. |
+
+```powershell
+$backoff = New-ConstantBackoffStrategy -DelaySeconds 5
+```
+
+---
+
+### `New-CustomBackoffStrategy`
+
+Wraps a caller-supplied `GetDelay` script block in the standard
+backoff-strategy hashtable shape. Escape hatch for cases the built-ins
+do not cover (HTTP 429 `Retry-After`, jittered exponential,
+deadline-aware backoff).
+
+| Parameter        | Type        | Required | Description                                                                |
+|------------------|-------------|----------|----------------------------------------------------------------------------|
+| `-DelayProvider` | scriptblock | Yes      | Called as `& $DelayProvider $Attempt $LastError`; must return seconds.     |
+| `-Name`          | string      | No       | Label surfaced by `Invoke-WithRetry` in the per-retry warning. Default `Custom`. |
+
+```powershell
+$jittered = New-CustomBackoffStrategy -Name 'JitteredExponential' `
+    -DelayProvider {
+        param($Attempt, $LastError)
+        $base = [Math]::Min(2 * [Math]::Pow(2, $Attempt - 1), 30)
+        $base + (Get-Random -Minimum 0 -Maximum 2)
+    }
 ```
 
 ---
@@ -235,17 +443,39 @@ sibling repos call them via `workflow_call` and `uses:` references to
 ```
 Infrastructure-Common/
 |- Infrastructure.Common/
+|  |- Private/                          # Module-internal helpers (not exported); mirrors Public\ layout
+|  |  `- Retry/
+|  |     `- Assert-RetryStrategyShape.ps1
 |  |- Public/
 |  |  |- Assert-RequiredProperties.ps1
 |  |  |- ConvertTo-Array.ps1
 |  |  |- Invoke-ModuleInstall.ps1
-|  |  `- Invoke-WithNetworkRetry.ps1
-|  |- Infrastructure.Common.psm1        # Dot-sources Public\; exports Public functions
+|  |  `- Retry/                         # Retry family (loop + strategies)
+|  |     |- Invoke-WithRetry.ps1             # generic retry loop
+|  |     |- TransientErrorStrategies/       # ShouldRetry classifiers
+|  |     |  |- New-FileLockRetryStrategy.ps1
+|  |     |  `- New-TransientNetworkRetryStrategy.ps1
+|  |     `- BackoffStrategies/              # GetDelay providers
+|  |        |- New-ConstantBackoffStrategy.ps1
+|  |        |- New-CustomBackoffStrategy.ps1
+|  |        |- New-ExponentialBackoffStrategy.ps1
+|  |        `- New-LinearBackoffStrategy.ps1
+|  |- Infrastructure.Common.psm1        # Dot-sources Public\ (recursively); exports Public functions
 |  `- Infrastructure.Common.psd1        # Module manifest (version, GUID, exports)
 |- Tests/
 |  |- Assert-RequiredProperties.Tests.ps1
 |  |- ConvertTo-Array.Tests.ps1
 |  |- Invoke-ModuleInstall.Tests.ps1
+|  |- Retry/                            # Mirrors Infrastructure.Common\Public\Retry\
+|  |  |- Invoke-WithRetry.Tests.ps1
+|  |  |- TransientErrorStrategies/
+|  |  |  |- New-FileLockRetryStrategy.Tests.ps1
+|  |  |  `- New-TransientNetworkRetryStrategy.Tests.ps1
+|  |  `- BackoffStrategies/
+|  |     |- New-ConstantBackoffStrategy.Tests.ps1
+|  |     |- New-CustomBackoffStrategy.Tests.ps1
+|  |     |- New-ExponentialBackoffStrategy.Tests.ps1
+|  |     `- New-LinearBackoffStrategy.Tests.ps1
 |  |- ... (shared CI helper tests)
 |  `- Integration.DockerHost/           # Integration tests - run in Docker only
 |- .github/

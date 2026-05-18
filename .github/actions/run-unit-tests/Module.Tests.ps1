@@ -14,9 +14,13 @@ BeforeAll {
         Get-ChildItem -Path $root -Filter '*.psm1' | Select-Object -First 1 -ExpandProperty FullName) -Raw
 
     # Convention: filename == function name (e.g. ConvertTo-Array.ps1).
+    # Recursive so repos can group related functions into subfolders
+    # (e.g. Public\Retry\) without breaking the registration check.
+    # Flat Public\ layouts still match - recursion is a superset.
     $script:publicFns = Get-ChildItem `
-        -Path   ([IO.Path]::Combine($root, 'Public')) `
-        -Filter '*.ps1' |
+        -Path    ([IO.Path]::Combine($root, 'Public')) `
+        -Filter  '*.ps1' `
+        -Recurse |
         Select-Object -ExpandProperty BaseName
 }
 
