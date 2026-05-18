@@ -15,7 +15,8 @@
     FunctionsToExport = @(
         'Assert-RequiredProperties',
         'ConvertTo-Array',
-        'Invoke-ModuleInstall'
+        'Invoke-ModuleInstall',
+        'Invoke-WithNetworkRetry'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

@@ -13,6 +13,9 @@
       whether PowerShell unrolled a single-item collection.
     - Invoke-ModuleInstall: installs a PSGallery module if absent or below a
       minimum version, then imports it.
+    - Invoke-WithNetworkRetry: runs a scriptblock and retries on transient
+      network failures (DNS, connection drops, 5xx) with exponential
+      backoff; non-transient errors (4xx, mocks) propagate immediately.
 
     Hyper-V VM helpers (SSH execution, host file server) were moved to the
     Infrastructure.HyperV module to keep this module focused on genuinely
@@ -28,6 +31,7 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Public\Assert-RequiredProperties.ps1"
 . "$PSScriptRoot\Public\ConvertTo-Array.ps1"
 . "$PSScriptRoot\Public\Invoke-ModuleInstall.ps1"
+. "$PSScriptRoot\Public\Invoke-WithNetworkRetry.ps1"
 
 # Export-ModuleMember controls what is actually callable after Import-Module.
 # It takes precedence over FunctionsToExport in the psd1 at runtime, so both
@@ -38,4 +42,5 @@ $ErrorActionPreference = 'Stop'
 Export-ModuleMember -Function `
     Assert-RequiredProperties, `
     ConvertTo-Array, `
-    Invoke-ModuleInstall
+    Invoke-ModuleInstall, `
+    Invoke-WithNetworkRetry
