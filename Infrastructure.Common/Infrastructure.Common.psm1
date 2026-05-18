@@ -16,9 +16,12 @@
     - Invoke-WithNetworkRetry: runs a scriptblock and retries on transient
       network failures (DNS, connection drops, 5xx) with exponential
       backoff; non-transient errors (4xx, mocks) propagate immediately.
+      Slated for removal once consumers migrate to Invoke-WithRetry.
+    - Invoke-WithRetry: generic retry loop that consumes hashtable-shaped
+      retry (ShouldRetry) and backoff (GetDelay) strategies. The classifier
+      and pacing are caller-supplied; the loop just orchestrates.
     - New-TransientNetworkRetryStrategy: builds a retry-strategy hashtable
-      that matches transient network failures, for use with the upcoming
-      Invoke-WithRetry primitive.
+      that matches transient network failures, consumed by Invoke-WithRetry.
     - New-FileLockRetryStrategy: builds a retry-strategy hashtable that
       matches System.IO.IOException (file-lock contention, e.g. Hyper-V
       VMMS handle release after Remove-VM).
@@ -40,6 +43,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Module-internal helpers (not exported). Loaded first so functions
+# dot-sourced from Public\ can rely on them at parse / call time.
+. "$PSScriptRoot\Private\Retry\Assert-RetryStrategyShape.ps1"
+
 # Top-level utilities (no domain grouping yet).
 . "$PSScriptRoot\Public\Assert-RequiredProperties.ps1"
 . "$PSScriptRoot\Public\ConvertTo-Array.ps1"
@@ -58,6 +65,7 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Public\Retry\BackoffStrategies\New-ExponentialBackoffStrategy.ps1"
 . "$PSScriptRoot\Public\Retry\BackoffStrategies\New-LinearBackoffStrategy.ps1"
 . "$PSScriptRoot\Public\Retry\Invoke-WithNetworkRetry.ps1"
+. "$PSScriptRoot\Public\Retry\Invoke-WithRetry.ps1"
 
 # Export-ModuleMember controls what is actually callable after Import-Module.
 # It takes precedence over FunctionsToExport in the psd1 at runtime, so both
@@ -71,6 +79,7 @@ Export-ModuleMember -Function `
     Invoke-ModuleInstall, `
     `
     Invoke-WithNetworkRetry, `
+    Invoke-WithRetry, `
     New-FileLockRetryStrategy, `
     New-TransientNetworkRetryStrategy, `
     `

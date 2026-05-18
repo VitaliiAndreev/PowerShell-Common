@@ -19,6 +19,7 @@
         'Invoke-ModuleInstall',
         # Retry loop (Public/Retry/)
         'Invoke-WithNetworkRetry',
+        'Invoke-WithRetry',
         # Transient-error strategies (Public/Retry/TransientErrorStrategies/)
         'New-FileLockRetryStrategy',
         'New-TransientNetworkRetryStrategy',
