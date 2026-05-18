@@ -17,6 +17,7 @@ sibling modules:
   - [Assert-RequiredProperties](#assert-requiredproperties)
   - [ConvertTo-Array](#convertto-array)
   - [Invoke-ModuleInstall](#invoke-moduleinstall)
+  - [Invoke-WithNetworkRetry](#invoke-withnetworkretry)
 - [Reusable CI](#reusable-ci)
 - [Repo structure](#repo-structure)
 
@@ -40,6 +41,10 @@ does not need to be duplicated and tested in each one independently:
   whether PowerShell unrolled a single-item collection.
 - **`Invoke-ModuleInstall`** - installs a module from PSGallery if absent or
   below the required minimum version, then imports it.
+- **`Invoke-WithNetworkRetry`** - runs a scriptblock and retries on transient
+  network failures (DNS hiccups, connection drops, 5xx) with exponential
+  backoff; non-transient errors (4xx, validation bugs, mock-thrown strings)
+  propagate immediately so failures stay fast.
 
 This repo is also the canonical home of the reusable CI workflows and composite
 actions that every infrastructure module shares - see
@@ -176,6 +181,36 @@ Invoke-ModuleInstall -ModuleName 'Posh-SSH'
 
 ---
 
+### `Invoke-WithNetworkRetry`
+
+Runs `-ScriptBlock` and retries on transient network failures with
+exponential backoff. Used to harden any caller that touches the network
+(JDK acquisition, GitHub API, runner registration, ...) against brief
+DNS hiccups or short-lived 5xx responses without making hard failures
+feel sluggish.
+
+Classification is deliberate: failures are retried only when the
+exception chain contains a known-transient type
+(`HttpRequestException`, `SocketException`, `WebException`,
+`TimeoutException`, `TaskCanceledException`) or a 5xx
+`HttpResponseException`. Everything else (4xx, argument bugs, mock-
+thrown strings in tests) propagates immediately.
+
+| Parameter              | Type        | Required | Description                                                                         |
+|------------------------|-------------|----------|-------------------------------------------------------------------------------------|
+| `-ScriptBlock`         | scriptblock | Yes      | The work to attempt. Its return value is the function's return value on success.    |
+| `-OperationName`       | string      | No       | Label surfaced in the per-retry warning. Defaults to `network call`.                |
+| `-MaxAttempts`         | int         | No       | Total attempts including the first. Defaults to `3`. Pass `1` to disable retry.     |
+| `-InitialDelaySeconds` | int         | No       | Seconds before the first retry. Doubles each subsequent attempt. Defaults to `2`.   |
+
+```powershell
+$json = Invoke-WithNetworkRetry `
+    -OperationName 'Adoptium feature_releases lookup' `
+    -ScriptBlock   { Invoke-RestMethod -Uri $uri -UseBasicParsing }
+```
+
+---
+
 ## Reusable CI
 
 The composite actions under `.github/actions/` and the reusable workflows
@@ -203,7 +238,8 @@ Infrastructure-Common/
 |  |- Public/
 |  |  |- Assert-RequiredProperties.ps1
 |  |  |- ConvertTo-Array.ps1
-|  |  `- Invoke-ModuleInstall.ps1
+|  |  |- Invoke-ModuleInstall.ps1
+|  |  `- Invoke-WithNetworkRetry.ps1
 |  |- Infrastructure.Common.psm1        # Dot-sources Public\; exports Public functions
 |  `- Infrastructure.Common.psd1        # Module manifest (version, GUID, exports)
 |- Tests/
