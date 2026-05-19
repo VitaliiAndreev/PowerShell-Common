@@ -32,6 +32,49 @@
 #   error itself says only "No match was found".
 # ---------------------------------------------------------------------------
 
+# Single source of truth for PSGallery source-resolution patterns.
+# Two consumers feed strings into this helper:
+#   1. Test-TransientPowerShellModuleInstallException below, against the
+#      combined ErrorRecord message text.
+#   2. Invoke-ModuleInstall, against each captured warning's .Message
+#      so it can decide whether to promote the warning into the error
+#      message before rethrowing.
+# Keeping the pattern list in one place prevents the two consumers from
+# drifting out of sync as PowerShellGet wording shifts.
+#
+# Why two consumers - one signal arrives via two channels:
+#   Today, PowerShellGet emits the source-resolution text only in the
+#   warning stream; the terminating error itself is the ambiguous
+#   "No match was found". So in practice consumer #2 (warning check in
+#   Invoke-ModuleInstall) is what catches the actual flake, and #1 (the
+#   strategy's check against the error text) only matches because #2
+#   first promoted the warning text into the error.
+#
+#   The strategy's re-check is therefore *defensive belt-and-braces*: if
+#   a future PowerShellGet version starts surfacing source-resolution
+#   text directly in the terminating error (skipping the warning stream),
+#   the strategy still classifies it correctly without any change to
+#   Invoke-ModuleInstall. Cost is one extra regex evaluation per failed
+#   attempt - negligible compared to the retry sleep budget.
+function Test-PSGallerySourceResolutionMessage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Message
+    )
+
+    $transientPatterns = @(
+        'Unable to resolve package source',
+        'package source.*(unavailable|not\s+available|not\s+found)'
+    )
+
+    foreach ($pattern in $transientPatterns) {
+        if ($Message -match $pattern) { return $true }
+    }
+    return $false
+}
+
 function Test-TransientPowerShellModuleInstallException {
     [CmdletBinding()]
     param(
@@ -47,15 +90,7 @@ function Test-TransientPowerShellModuleInstallException {
     if ($ErrorRecord.ErrorDetails) { $messages += $ErrorRecord.ErrorDetails.Message }
     $combined = ($messages -join ' ')
 
-    $transientPatterns = @(
-        'Unable to resolve package source',
-        'package source.*(unavailable|not\s+available|not\s+found)'
-    )
-
-    foreach ($pattern in $transientPatterns) {
-        if ($combined -match $pattern) { return $true }
-    }
-    return $false
+    return (Test-PSGallerySourceResolutionMessage -Message $combined)
 }
 
 function New-TransientPowerShellModuleInstallRetryStrategy {
