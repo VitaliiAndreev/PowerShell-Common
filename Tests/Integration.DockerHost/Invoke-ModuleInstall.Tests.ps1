@@ -1,4 +1,13 @@
 BeforeAll {
+    # Invoke-ModuleInstall now depends on the retry primitives + strategy
+    # factories (used at runtime via dynamic lookup, so the missing
+    # dot-source only surfaces when the install path actually executes -
+    # i.e. the absent-module test, not the already-installed one).
+    . "$PSScriptRoot\..\..\Infrastructure.Common\Private\Retry\Assert-RetryStrategyShape.ps1"
+    . "$PSScriptRoot\..\..\Infrastructure.Common\Public\Retry\Invoke-WithRetry.ps1"
+    . "$PSScriptRoot\..\..\Infrastructure.Common\Public\Retry\BackoffStrategies\New-ExponentialBackoffStrategy.ps1"
+    . "$PSScriptRoot\..\..\Infrastructure.Common\Public\Retry\TransientErrorStrategies\New-TransientPowerShellModuleInstallRetryStrategy.ps1"
+    . "$PSScriptRoot\..\..\Infrastructure.Common\Public\Retry\TransientErrorStrategies\New-TransientNetworkRetryStrategy.ps1"
     . "$PSScriptRoot\..\..\Infrastructure.Common\Public\Invoke-ModuleInstall.ps1"
 }
 
