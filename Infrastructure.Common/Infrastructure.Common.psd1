@@ -21,6 +21,7 @@
         'Invoke-WithRetry',
         # Transient-error strategies (Public/Retry/TransientErrorStrategies/)
         'New-FileLockRetryStrategy',
+        'New-TransientPowerShellModuleInstallRetryStrategy',
         'New-TransientNetworkRetryStrategy',
         # Backoff strategies (Public/Retry/BackoffStrategies/)
         'New-ConstantBackoffStrategy',

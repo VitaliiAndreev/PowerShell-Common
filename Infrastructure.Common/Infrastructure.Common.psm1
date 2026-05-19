@@ -55,6 +55,7 @@ $ErrorActionPreference = 'Stop'
 # dot-sourced before the loop helpers so the loop's relocated classifier
 # helper resolves at module-load time.
 . "$PSScriptRoot\Public\Retry\TransientErrorStrategies\New-FileLockRetryStrategy.ps1"
+. "$PSScriptRoot\Public\Retry\TransientErrorStrategies\New-TransientPowerShellModuleInstallRetryStrategy.ps1"
 . "$PSScriptRoot\Public\Retry\TransientErrorStrategies\New-TransientNetworkRetryStrategy.ps1"
 . "$PSScriptRoot\Public\Retry\BackoffStrategies\New-ConstantBackoffStrategy.ps1"
 . "$PSScriptRoot\Public\Retry\BackoffStrategies\New-CustomBackoffStrategy.ps1"
@@ -75,6 +76,7 @@ Export-ModuleMember -Function `
     `
     Invoke-WithRetry, `
     New-FileLockRetryStrategy, `
+    New-TransientPowerShellModuleInstallRetryStrategy, `
     New-TransientNetworkRetryStrategy, `
     `
     New-ConstantBackoffStrategy, `
