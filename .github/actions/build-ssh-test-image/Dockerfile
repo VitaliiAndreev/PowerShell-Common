@@ -6,7 +6,7 @@ RUN find /etc/apt -name '*.list' -exec sed -i 's|http://|https://|g' {} + 2>/dev
 
 RUN apt-get update -qq && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        openssh-server sudo && \
+        openssh-server sudo curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Generate host keys once so sshd can start without needing ssh-keygen at
