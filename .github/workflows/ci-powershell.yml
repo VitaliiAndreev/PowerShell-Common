@@ -18,6 +18,12 @@ jobs:
   ci-ps7:
     name: Unit (PowerShell 7)
     runs-on: windows-latest
+
+    # See ci-powershell-docker-host.yml for why this is declared at the
+    # job level of the reusable workflow rather than left to the caller.
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v5
 

@@ -27,6 +27,16 @@ jobs:
     name: Integration (PowerShell 7) - Docker host tests
     runs-on: ubuntu-latest
 
+    # Explicit read-only token. Without this the job inherits whatever the
+    # caller granted - which is nothing when the calling repo's "Workflow
+    # permissions" default is set to "no permissions" - and actions/checkout
+    # fails with "could not read Username for 'https://github.com'" because
+    # the auth header is empty. Declaring contents:read at the job level of
+    # the reusable workflow overrides the caller's default and lets the
+    # checkout step authenticate via the auto-provided GITHUB_TOKEN.
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
