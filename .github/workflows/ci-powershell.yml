@@ -33,6 +33,56 @@ jobs:
           ref: ${{ github.repository == 'VitaliiAndreev/Infrastructure-Common' && github.sha || 'master' }}
           path: .ci-common
 
+      # Lint pass before the unit tests because (a) it is far faster
+      # and a failure here usually points at a real bug not an
+      # environment hiccup, and (b) it lets the operator notice the
+      # lint signal even if the unit suite later goes red for an
+      # unrelated reason.
+      #
+      # The pattern matches a bare `return @()` STATEMENT in any
+      # non-test .ps1. That return shape unrolls the empty array on
+      # the output stream so the caller sees $null instead of an
+      # empty array - the producer-side dual of the `.Count`
+      # single-match scalar trap. Use `return ,@()` to preserve array
+      # shape. See Infrastructure-Common's memory
+      # `feedback_powershell_return_empty_array.md`.
+      #
+      # The anchor `^\s*` requires `return` at line start (after
+      # whitespace) so comments that mention the literal text
+      # `return @()` are not false-positives. The codebase
+      # convention puts return on its own line, so this is precise
+      # enough without an AST walker.
+      #
+      # `.ci-common/` is the sibling checkout of Infrastructure-Common
+      # itself; excluded so the lint applies only to the caller repo's
+      # own production code.
+      - name: Lint - no bare `return @()`
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $pattern = '^\s*return\s+@\(\s*\)\s*$'
+          $files = Get-ChildItem -Recurse -File -Filter '*.ps1' |
+              Where-Object {
+                  $rel = $_.FullName.Substring($PWD.Path.Length).TrimStart('\','/')
+                  $rel -notmatch '^\.ci-common([\\/]|$)' -and
+                  $rel -notmatch '(^|[\\/])Tests([\\/]|$)'
+              }
+          $hits = $files | Select-String -Pattern $pattern
+          if ($hits) {
+              foreach ($h in $hits) {
+                  # GitHub Actions annotation format - shows the offending
+                  # line as a red squiggle in the PR diff view.
+                  Write-Host (
+                      "::error file=$($h.Path),line=$($h.LineNumber)::" +
+                      "Bare 'return @()' unrolls to `$null at the caller. " +
+                      "Use 'return ,@()' to preserve array shape."
+                  )
+              }
+              Write-Host "Lint failed: $($hits.Count) bare 'return @()' occurrence(s) found."
+              exit 1
+          }
+          Write-Host "Lint OK: no bare 'return @()' in production .ps1."
+
       - name: Run unit tests
         shell: pwsh
         run: |
