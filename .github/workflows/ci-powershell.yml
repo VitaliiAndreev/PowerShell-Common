@@ -33,25 +33,29 @@ jobs:
           ref: ${{ github.repository == 'VitaliiAndreev/Infrastructure-Common' && github.sha || 'master' }}
           path: .ci-common
 
-      # Lint pass before the unit tests because (a) it is far faster
-      # and a failure here usually points at a real bug not an
-      # environment hiccup, and (b) it lets the operator notice the
-      # lint signal even if the unit suite later goes red for an
-      # unrelated reason.
-      #
-      # Logic + comment-aware regex live in the script alongside
-      # other reusable action helpers; see its header for rationale.
-      - name: Lint - no bare `return @()`
-        shell: pwsh
-        run: |
-          .ci-common/.github/actions/lint-no-bare-return-empty-array/Test-NoBareReturnEmptyArray.ps1 `
-            -SourceRoot '${{ github.workspace }}'
-
+      # Unit tests run BEFORE the lint pass so the lint helpers'
+      # own tests gate the lint's correctness. The lint scans for
+      # bare `return @()` in production .ps1 across the consumer
+      # repo; if the lint itself had a bug that made it pass-always,
+      # running it first would let the bare-return bug land while
+      # only the next PR caught the broken lint. Running tests first
+      # closes that one-commit gap. The lint is fast (sub-second on
+      # ~50 .ps1 files), so the cost of running it second is
+      # negligible.
       - name: Run unit tests
         shell: pwsh
         run: |
           .ci-common/.github/actions/run-unit-tests/Run-Tests.ps1 `
             -TestsRoot '${{ github.workspace }}'
+
+      # Lint pass after the unit suite. Logic + comment-aware regex
+      # live in the script alongside other reusable action helpers;
+      # see its header for rationale.
+      - name: Lint - no bare `return @()`
+        shell: pwsh
+        run: |
+          .ci-common/.github/actions/lint-no-bare-return-empty-array/Test-NoBareReturnEmptyArray.ps1 `
+            -SourceRoot '${{ github.workspace }}'
 
       - name: Upload test results
         if: always()
