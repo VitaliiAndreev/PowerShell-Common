@@ -1,18 +1,44 @@
 BeforeAll {
     . "$PSScriptRoot\..\scripts\Find-GitBashExecutable.ps1"
+
+    # %SystemRoot% is what the function checks the PATH fallback against
+    # to reject WSL's bash launcher. Pin it for the WSL-rejection test.
+    $script:SystemRoot = $env:SystemRoot
 }
 
 Describe 'Find-GitBashExecutable' {
 
     BeforeEach {
-        # Unfiltered catch-all so calls that don't match the specific
+        # Unfiltered catch-alls so calls that don't match the specific
         # filters below remain visible to Should -Invoke. See memory note
         # feedback_pester5_mock_fallthrough.
         Mock Get-Command { }
         Mock Test-Path { }
     }
 
-    Context 'bash.exe is on PATH' {
+    Context 'git.exe is on PATH and bash exists alongside it' {
+
+        BeforeEach {
+            Mock Get-Command -ParameterFilter { $Name -eq 'git.exe' } {
+                [pscustomobject]@{ Source = 'C:\Program Files\Git\cmd\git.exe' }
+            }
+            Mock Test-Path -ParameterFilter {
+                $LiteralPath -eq 'C:\Program Files\Git\bin\bash.exe'
+            } { $true }
+        }
+
+        It 'returns the derived bash.exe under the Git install bin dir' {
+            Find-GitBashExecutable | Should -Be 'C:\Program Files\Git\bin\bash.exe'
+        }
+
+        It 'does not consult bash.exe on PATH (short-circuits after deriving)' {
+            Find-GitBashExecutable | Out-Null
+            Should -Invoke Get-Command -Times 0 `
+                -ParameterFilter { $Name -eq 'bash.exe' }
+        }
+    }
+
+    Context 'git.exe is not on PATH but a non-WSL bash.exe is' {
 
         BeforeEach {
             Mock Get-Command -ParameterFilter { $Name -eq 'bash.exe' } {
@@ -20,62 +46,53 @@ Describe 'Find-GitBashExecutable' {
             }
         }
 
-        It 'returns the path reported by Get-Command' {
+        It 'falls back to the non-WSL bash.exe on PATH' {
             Find-GitBashExecutable | Should -Be 'C:\Tools\bash.exe'
-        }
-
-        It 'does not look for git.exe (short-circuits after finding bash)' {
-            Find-GitBashExecutable | Out-Null
-            Should -Invoke Get-Command -Times 0 `
-                -ParameterFilter { $Name -eq 'git.exe' }
         }
     }
 
-    Context 'bash.exe is not on PATH but git.exe is and bash exists alongside it' {
+    Context 'only the WSL launcher bash.exe is on PATH' {
 
         BeforeEach {
-            # bash.exe lookup returns nothing; git.exe lookup returns a
-            # plausible Git for Windows install path.
+            # Windows 10/11's C:\Windows\System32\bash.exe forwards to a
+            # WSL distro - the function must refuse it.
+            Mock Get-Command -ParameterFilter { $Name -eq 'bash.exe' } {
+                [pscustomobject]@{ Source = "$script:SystemRoot\System32\bash.exe" }
+            }
+        }
+
+        It 'rejects the WSL bash and throws the Git-for-Windows hint' {
+            { Find-GitBashExecutable } |
+                Should -Throw '*Install Git for Windows*'
+        }
+    }
+
+    Context 'git.exe is on PATH but no bash.exe alongside it, and no non-WSL fallback' {
+
+        BeforeEach {
             Mock Get-Command -ParameterFilter { $Name -eq 'git.exe' } {
                 [pscustomobject]@{ Source = 'C:\Program Files\Git\cmd\git.exe' }
             }
-            # The function derives <git-install>\bin\bash.exe and probes it.
-            Mock Test-Path -ParameterFilter {
-                $LiteralPath -eq 'C:\Program Files\Git\bin\bash.exe'
-            } { $true }
+            # Test-Path on derived path returns $null/falsy; catch-all
+            # Get-Command for bash.exe also returns nothing.
         }
 
-        It 'returns the derived bash.exe path under the Git install bin dir' {
-            Find-GitBashExecutable | Should -Be 'C:\Program Files\Git\bin\bash.exe'
-        }
-
-        It 'probes the derived path with Test-Path' {
-            Find-GitBashExecutable | Out-Null
+        It 'probes the derived path before falling back' {
+            { Find-GitBashExecutable } | Should -Throw
             Should -Invoke Test-Path -Times 1 -Exactly -ParameterFilter {
                 $LiteralPath -eq 'C:\Program Files\Git\bin\bash.exe'
             }
         }
-    }
 
-    Context 'bash.exe is not on PATH, git.exe is, but no bash.exe alongside it' {
-
-        BeforeEach {
-            Mock Get-Command -ParameterFilter { $Name -eq 'git.exe' } {
-                [pscustomobject]@{ Source = 'C:\Program Files\Git\cmd\git.exe' }
-            }
-            # Catch-all Test-Path mock returns $null/falsy, so the derived
-            # bash.exe is treated as absent.
-        }
-
-        It 'throws naming the derived path so the user knows where it looked' {
+        It 'throws the Git-for-Windows hint when no candidate found' {
             { Find-GitBashExecutable } |
-                Should -Throw "*C:\Program Files\Git\bin\bash.exe*"
+                Should -Throw '*Install Git for Windows*'
         }
     }
 
-    Context 'neither bash.exe nor git.exe is on PATH' {
+    Context 'neither git.exe nor bash.exe is on PATH' {
 
-        It 'throws with a Git-for-Windows install hint' {
+        It 'throws the Git-for-Windows hint' {
             { Find-GitBashExecutable } |
                 Should -Throw '*Install Git for Windows*'
         }
