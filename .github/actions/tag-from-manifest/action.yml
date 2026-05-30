@@ -1,14 +1,12 @@
 name: Tag from manifest version
 description: >
-  When the ModuleVersion in the .psd1 manifest is new, creates and pushes
-  three tags on the current HEAD: the immutable module tag X.Y.Z
-  (gates PSGallery publish), the immutable GitHub Actions consumer tag
-  vX.Y.Z, and the floating major tag vX (force-moved on every release).
-  If the module tag already exists the step is skipped, leaving the
-  action tags untouched - workflow-only releases are advanced manually
-  via Publish-VersionTags.ps1 instead. Requires the calling workflow to
-  have 'permissions: contents: write' and to check out with
-  'fetch-depth: 0' so existing tags are visible to the clobber checks.
+  Creates and pushes a git tag matching the ModuleVersion in the .psd1
+  manifest. If the tag already exists the step is skipped. Manages the
+  module tag stream (bare X.Y.Z) only - the GitHub Actions consumer tag
+  stream (vX.Y.Z + rolling vX) lives in Publish-VersionTags.ps1 and
+  advances independently; the two namespaces never collide. Requires the
+  calling workflow to have 'permissions: contents: write' and to check
+  out with 'fetch-depth: 0' so all existing tags are visible.
 
 inputs:
   psd1:

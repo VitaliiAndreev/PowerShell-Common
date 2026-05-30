@@ -13,108 +13,51 @@ Describe 'Invoke-TagFromManifest' {
         Mock Import-PowerShellDataFile {
             [PSCustomObject]@{ ModuleVersion = '1.0.2' }
         }
-        # Catch-all mock so EVERY git invocation is counted by
-        # Should -Invoke. Without this, calls not matching any of the
-        # parameter-filtered mocks below would fall through to the real
-        # 'function git {}' stub from BeforeAll - which is not a mock, so
-        # those calls would be invisible to assertions.
-        Mock git { }
-        # rev-parse always resolves to a fixed fake SHA so the three-tag
-        # assertions below can pin to one value.
-        Mock git -ParameterFilter { $args[0] -eq 'rev-parse' } { 'abc123' }
     }
 
-    Context 'when the module tag already exists' {
+    Context 'when the tag already exists' {
 
         BeforeEach {
-            # git tag -l 1.0.2 returns the tag name when it exists.
-            Mock git -ParameterFilter {
-                $args[0] -eq 'tag' -and $args[1] -eq '-l' -and $args[2] -eq '1.0.2'
-            } { '1.0.2' }
+            # git tag -l <version> returns the tag name when it exists.
+            Mock git { '1.0.2' }
         }
 
-        It 'does not create any tags' {
+        It 'does not create a tag' {
             Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            # Any 'git tag ...' call other than the -l existence check would
-            # be tag creation; assert none happened.
-            Should -Invoke git -Times 0 -ParameterFilter {
-                $args[0] -eq 'tag' -and $args[1] -ne '-l'
-            }
+            # Verify git was only called once (the -l check) and never
+            # called with 'tag' alone (which would create a new tag).
+            Should -Invoke git -Times 1 -Exactly `
+                -ParameterFilter { $args[0] -eq 'tag' -and $args[1] -eq '-l' }
         }
 
-        It 'does not push anything' {
+        It 'does not push' {
             Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 0 -ParameterFilter { $args[0] -eq 'push' }
+            Should -Invoke git -Times 0 `
+                -ParameterFilter { $args[0] -eq 'push' }
         }
     }
 
-    Context 'when neither the module tag nor the action tag exist' {
+    Context 'when the tag does not exist' {
 
         BeforeEach {
-            # Catch-all for both 'tag -l 1.0.2' and 'tag -l v1.0.2' - empty
-            # string means the tag is absent. More specific mocks in other
-            # contexts override this.
-            Mock git -ParameterFilter {
-                $args[0] -eq 'tag' -and $args[1] -eq '-l'
-            } { }
+            # git tag -l <version> returns empty string when tag is absent.
+            Mock git { }
         }
 
-        It 'creates the immutable module tag at HEAD' {
+        It 'creates the module tag from the manifest version' {
             Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 1 -Exactly -ParameterFilter {
-                $args[0] -eq 'tag' -and
-                $args[1] -eq '1.0.2' -and
-                $args[2] -eq 'abc123'
-            }
+            Should -Invoke git -Times 1 `
+                -ParameterFilter { $args[0] -eq 'tag' -and $args[1] -eq '1.0.2' }
         }
 
-        It 'creates the immutable action tag at HEAD' {
+        It 'pushes the tag to origin' {
             Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 1 -Exactly -ParameterFilter {
-                $args[0] -eq 'tag' -and
-                $args[1] -eq 'v1.0.2' -and
-                $args[2] -eq 'abc123'
-            }
-        }
-
-        It 'force-moves the major action tag to HEAD' {
-            Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 1 -Exactly -ParameterFilter {
-                $args[0] -eq 'tag' -and
-                $args[1] -eq '-f' -and
-                $args[2] -eq 'v1' -and
-                $args[3] -eq 'abc123'
-            }
-        }
-
-        It 'pushes the immutable module tag' {
-            Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 1 -Exactly -ParameterFilter {
-                $args[0] -eq 'push' -and
-                $args[1] -eq 'origin' -and
-                $args[2] -eq '1.0.2' -and
-                $args.Count -eq 3
-            }
-        }
-
-        It 'pushes the immutable action tag' {
-            Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 1 -Exactly -ParameterFilter {
-                $args[0] -eq 'push' -and
-                $args[1] -eq 'origin' -and
-                $args[2] -eq 'v1.0.2' -and
-                $args.Count -eq 3
-            }
-        }
-
-        It 'force-pushes the major action tag' {
-            Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
-            Should -Invoke git -Times 1 -Exactly -ParameterFilter {
-                $args[0] -eq 'push' -and
-                $args[1] -eq 'origin' -and
-                $args[2] -eq 'v1' -and
-                $args[3] -eq '--force'
-            }
+            Should -Invoke git -Times 1 `
+                -ParameterFilter {
+                    $args[0] -eq 'push' -and
+                    $args[1] -eq 'origin' -and
+                    $args[2] -eq '1.0.2'
+                }
         }
 
         It 'reads the version from the provided psd1 path' {
@@ -122,29 +65,16 @@ Describe 'Invoke-TagFromManifest' {
             Should -Invoke Import-PowerShellDataFile -Times 1 `
                 -ParameterFilter { $Path -eq 'Module\Module.psd1' }
         }
-    }
 
-    Context 'when the module tag is new but the action tag already exists' {
-
-        BeforeEach {
-            Mock git -ParameterFilter {
-                $args[0] -eq 'tag' -and $args[1] -eq '-l' -and $args[2] -eq '1.0.2'
-            } { }
-            # Prior manual Publish-VersionTags.ps1 run claimed this number.
-            Mock git -ParameterFilter {
-                $args[0] -eq 'tag' -and $args[1] -eq '-l' -and $args[2] -eq 'v1.0.2'
-            } { 'v1.0.2' }
-        }
-
-        It 'throws a collision error naming the conflicting tag' {
-            { Invoke-TagFromManifest -Psd1 'Module\Module.psd1' } |
-                Should -Throw "*v1.0.2*already exists*"
-        }
-
-        It 'does not push anything' {
-            { Invoke-TagFromManifest -Psd1 'Module\Module.psd1' } |
-                Should -Throw
-            Should -Invoke git -Times 0 -ParameterFilter { $args[0] -eq 'push' }
+        It 'does not touch any action-stream tags (vX.Y.Z, vX)' {
+            Invoke-TagFromManifest -Psd1 'Module\Module.psd1'
+            # No 'tag v...' creates, no 'push origin v...', no force pushes.
+            Should -Invoke git -Times 0 -ParameterFilter {
+                $args[0] -eq 'tag' -and ($args[1] -like 'v*' -or $args[2] -like 'v*')
+            }
+            Should -Invoke git -Times 0 -ParameterFilter {
+                $args[0] -eq 'push' -and $args -contains '--force'
+            }
         }
     }
 }

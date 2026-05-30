@@ -8,6 +8,8 @@ Shared PowerShell functions and reusable PowerShell centric GitHub composite act
 - [Overview](#overview)
 - [Installation](#installation)
 - [Publishing](#publishing)
+  - [Shipping a module release (PSGallery)](#shipping-a-module-release-psgallery)
+  - [Shipping an action / workflow release (for `@vN` consumers)](#shipping-an-action--workflow-release-for-vn-consumers)
 - [API reference](#api-reference)
   - Top-level utilities
     - [Assert-RequiredProperties](#assert-requiredproperties)
@@ -147,21 +149,51 @@ from source instead of PSGallery.
 
 ## Publishing
 
-Publishing is fully automated via GitHub Actions.
+This repo carries **two independent tag streams** that share the git repo
+but not the version numbering. Each has its own release flow.
 
-**To ship a new version:**
+| Stream | Tag shape | Driven by | Consumed by |
+|---|---|---|---|
+| Module | `X.Y.Z` (e.g. `6.0.0`) | Automated: `tag-from-manifest` on `.psd1` bump | `Install-Module PowerShell.Common` from PSGallery |
+| Actions | `vX.Y.Z` + rolling `vX` (e.g. `v7.0.0`, `v7`) | Manual: [scripts/Publish-VersionTags.ps1](scripts/Publish-VersionTags.ps1) | Other repos pinning `uses: VitaliiAndreev/PowerShell-Common/.github/.../<name>@vN` |
+
+The two namespaces never collide (`7.0.0` and `v7.0.0` are different tag
+names), so each stream can advance on its own cadence. Numbers across
+streams may drift; they are not required to align.
+
+### Shipping a module release (PSGallery)
 
 1. Bump `ModuleVersion` in [PowerShell.Common/PowerShell.Common.psd1](PowerShell.Common/PowerShell.Common.psd1)
 2. Open a PR, get it reviewed and merged
 
 On merge, [.github/workflows/tag.yml](.github/workflows/tag.yml) runs both
-the unit and integration test workflows, creates a matching git tag, then
-calls [.github/workflows/publish.yml](.github/workflows/publish.yml) to
-publish to PSGallery. No manual tagging step required.
+the unit and integration test workflows, creates a matching `X.Y.Z` git
+tag, then calls [.github/workflows/publish.yml](.github/workflows/publish.yml)
+to publish to PSGallery. No manual tagging step required.
 
 **One-time setup:** add your PSGallery API key as a repository secret named
 `PSGALLERY_API_KEY` under Settings -> Secrets and variables -> Actions.
 Generate a key at [powershellgallery.com/account/apikeys](https://www.powershellgallery.com/account/apikeys).
+
+### Shipping an action / workflow release (for `@vN` consumers)
+
+When you change a reusable workflow under `.github/workflows/` or a
+composite action under `.github/actions/`, downstream repos pinning
+`uses: …@vN` will not see the change until you publish new action tags.
+Run from any branch:
+
+```powershell
+.\scripts\Publish-VersionTags.ps1 -Version vX.Y.Z
+```
+
+It resolves `origin/master` to an explicit commit SHA, creates the
+immutable `vX.Y.Z` tag (refuses to re-point), and force-moves the rolling
+`vX` tag to that SHA. Consumers on `@vX` automatically get the new release
+on their next workflow run; consumers can pin to `@vX.Y.Z` for an
+immutable reference.
+
+Triggering is intentionally manual so PSGallery does not receive a module
+release for what is purely a CI / workflow change.
 
 ---
 
