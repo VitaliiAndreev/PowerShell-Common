@@ -19,6 +19,9 @@ param(
     [string] $DockerImage = 'mcr.microsoft.com/powershell:latest'
 )
 
-& ([IO.Path]::Combine($PSScriptRoot, '.github', 'actions', 'run-integration-tests', 'Run-IntegrationTests.ps1')) `
-    -TestsRoot   $PSScriptRoot `
+# Repo root is one level up now that this script lives under scripts\.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+
+& ([IO.Path]::Combine($repoRoot, '.github', 'actions', 'run-integration-tests', 'Run-IntegrationTests.ps1')) `
+    -TestsRoot   $repoRoot `
     -DockerImage $DockerImage

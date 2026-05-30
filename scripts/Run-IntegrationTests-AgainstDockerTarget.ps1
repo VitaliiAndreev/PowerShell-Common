@@ -31,18 +31,19 @@
 #>
 
 param(
-    [string] $TestsRoot = $PSScriptRoot
+    [string] $TestsRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$Script:ImageName   = 'infra-ssh-test-image'
+$Script:ImageName = 'infra-ssh-test-image'
 
-# GitHub-Common is checked out as a sibling of PowerShell-Common under
-# the shared repos root. Resolve the Dockerfile from there rather than
-# relying on an env var the local dev never sets.
-$Script:ReposRoot     = Split-Path -Parent $PSScriptRoot
+# Repo root is one level up now that this script lives under scripts\;
+# the shared repos root is one more level up from there. GitHub-Common is
+# checked out as a sibling of PowerShell-Common under that shared root.
+$Script:RepoRoot  = Split-Path -Parent $PSScriptRoot
+$Script:ReposRoot = Split-Path -Parent $Script:RepoRoot
 $Script:DockerfileDir = [IO.Path]::Combine(
     $Script:ReposRoot, 'GitHub-Common',
     '.github', 'actions', 'build-ssh-test-image')

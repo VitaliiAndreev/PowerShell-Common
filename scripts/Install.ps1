@@ -15,7 +15,9 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$moduleSrc   = Join-Path $PSScriptRoot 'PowerShell.Common'
+# Repo root is one level up now that this script lives under scripts\.
+$repoRoot    = Split-Path -Parent $PSScriptRoot
+$moduleSrc   = Join-Path $repoRoot 'PowerShell.Common'
 $moduleDst   = Join-Path ([Environment]::GetFolderPath('MyDocuments')) `
                    'WindowsPowerShell\Modules\PowerShell.Common'
 

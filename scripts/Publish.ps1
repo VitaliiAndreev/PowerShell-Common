@@ -26,13 +26,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$modulePath = Join-Path $PSScriptRoot 'PowerShell.Common'
+# Repo root is one level up now that this script lives under scripts\.
+$repoRoot   = Split-Path -Parent $PSScriptRoot
+$modulePath = Join-Path $repoRoot 'PowerShell.Common'
 $version    = (Import-PowerShellDataFile `
                    (Join-Path $modulePath 'PowerShell.Common.psd1')).ModuleVersion
 
 Write-Host "Publishing PowerShell.Common v$version to PSGallery ..."
 $env:API_KEY = $ApiKey
-. (Join-Path $PSScriptRoot '.github\actions\publish\Invoke-Publish.ps1')
+. (Join-Path $repoRoot '.github\actions\publish\Invoke-Publish.ps1')
 Invoke-Publish -ModulePath $modulePath
 Write-Host "Published. Install with: Install-Module PowerShell.Common" `
     -ForegroundColor Green

@@ -140,8 +140,8 @@ To update an existing installation:
 Update-Module PowerShell.Common
 ```
 
-**For local development of this module:** use `Install.ps1` to install from
-source instead of PSGallery.
+**For local development of this module:** use `scripts\Install.ps1` to install
+from source instead of PSGallery.
 
 ---
 
@@ -538,10 +538,11 @@ PowerShell-Common/
 |- docs/
 |  `- dev/
 |     `- implementation/                # Per-feature problem.md + plan.md
-|- Install.ps1               # Installs from source for local development
-|- Publish.ps1               # Publishes to PSGallery (called by publish.yml)
-|- Run-Tests.ps1             # Runs unit tests locally (thin wrapper)
-|- Run-IntegrationTests-InDocker.ps1  # Runs integration tests locally in Docker
-|- Run-IntegrationTests-AgainstDockerTarget.ps1
+|- scripts/                  # User-facing entry-point scripts
+|  |- Install.ps1            # Installs from source for local development
+|  |- Publish.ps1            # Publishes to PSGallery (called by publish.yml)
+|  |- Run-Tests.ps1          # Runs unit tests locally (thin wrapper)
+|  |- Run-IntegrationTests-InDocker.ps1  # Integration tests in Docker
+|  `- Run-IntegrationTests-AgainstDockerTarget.ps1
 `- README.md
 ```
