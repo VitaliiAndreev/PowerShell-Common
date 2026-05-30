@@ -56,7 +56,20 @@ $bash = Find-GitBashExecutable
 $bashArgs = @($scriptPath)
 if ($Version) { $bashArgs += $Version }
 
-& $bash @bashArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "publish-version-tags.sh exited with code $LASTEXITCODE."
+# The bash script runs git fetch / rev-parse / tag against the current
+# working directory, so CWD must be inside THIS repo's work tree. The
+# wrapper inherits whatever CWD launched it (the menu launches from the
+# workspace root c:\a_Code\, which is not a git repo), so set it
+# explicitly to PowerShell-Common's root before invoking bash.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $repoRoot
+try {
+    & $bash @bashArgs
+} finally {
+    Pop-Location
 }
+# Propagate bash's exit code verbatim. A throw here would print a PS
+# exception frame on top of the bash error message bash already printed,
+# which is duplicative noise - the operator only needs to see one
+# failure description.
+exit $LASTEXITCODE
