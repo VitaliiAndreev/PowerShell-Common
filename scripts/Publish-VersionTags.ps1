@@ -16,7 +16,10 @@
 
     GitHub-Common is located via the sibling assumption (..\GitHub-Common
     relative to this script's parent). Bash is invoked through Git for
-    Windows - either bash.exe on PATH or the one shipped alongside git.exe.
+    Windows - resolved by deriving <git-install>\bin\bash.exe from git.exe.
+    Plain `bash.exe` on PATH is intentionally NOT preferred because on
+    Windows 10/11 it usually resolves to C:\Windows\System32\bash.exe,
+    which is the WSL launcher, not Git Bash. See Find-GitBashExecutable.
 
 .PARAMETER Version
     The semver tag to publish, e.g. v1.2.3. If omitted, the underlying
