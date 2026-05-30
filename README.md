@@ -541,6 +541,8 @@ PowerShell-Common/
 |- scripts/                  # User-facing entry-point scripts
 |  |- Install.ps1            # Installs from source for local development
 |  |- Publish.ps1            # Publishes to PSGallery (called by publish.yml)
+|  |- Publish-VersionTags.ps1 # Publishes GitHub Actions vX.Y.Z + rolling vX tags
+|  |- Find-GitBashExecutable.ps1     # Helper dot-sourced by Publish-VersionTags
 |  |- Run-Tests.ps1          # Runs unit tests locally (thin wrapper)
 |  |- Run-IntegrationTests-InDocker.ps1  # Integration tests in Docker
 |  `- Run-IntegrationTests-AgainstDockerTarget.ps1
