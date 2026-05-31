@@ -9,6 +9,9 @@
     Current functions:
     - Assert-RequiredProperties: validates object fields are present and
       non-empty; throws a descriptive error if not.
+    - Assert-Wsl2Ready: verifies wsl.exe is on PATH and at least one
+      distro is registered; runs 'wsl --install' and throws a
+      Wsl2NotReady error if not ready so the caller can prompt for reboot.
     - ConvertTo-Array: ensures a value is always an array regardless of
       whether PowerShell unrolled a single-item collection.
     - Invoke-ModuleInstall: installs a PSGallery module if absent or below a
@@ -45,6 +48,7 @@ $ErrorActionPreference = 'Stop'
 
 # Top-level utilities (no domain grouping yet).
 . "$PSScriptRoot\Public\Assert-RequiredProperties.ps1"
+. "$PSScriptRoot\Public\Assert-Wsl2Ready.ps1"
 . "$PSScriptRoot\Public\ConvertTo-Array.ps1"
 . "$PSScriptRoot\Public\Invoke-ModuleInstall.ps1"
 
@@ -71,6 +75,7 @@ $ErrorActionPreference = 'Stop'
 # run-unit-tests action enforces that every Public\*.ps1 file appears in both.
 Export-ModuleMember -Function `
     Assert-RequiredProperties, `
+    Assert-Wsl2Ready, `
     ConvertTo-Array, `
     Invoke-ModuleInstall, `
     `
